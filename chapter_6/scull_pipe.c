@@ -29,18 +29,18 @@
 #include <linux/poll.h>
 
 #ifndef _DEBUG
-	#define PDEBUG(fmt, args...) 		\
+	#define PDEBUG(fmt, args...) 			\
 			do {} while(0)
 #else
-	#define PDEBUG(fmt, args...) 		\
+	#define PDEBUG(fmt, args...) 			\
 			printk("[%s:%d]"fmt,		\
 			__func__, __LINE__, ##args)	
 #endif
 /*#define min(x,y) ({ 					\
-					typeof(x) _x=(x);	\
-					typeof(y) _y=(y);	\
-					(void)(&_x == &_y);	\
-					_x < _y ? _x : y;	})
+			typeof(x) _x=(x);		\
+			typeof(y) _y=(y);		\
+			(void)(&_x == &_y);		\
+			_x < _y ? _x : y;})
 */					
 #define SCULL_PSIZE	1024
 
@@ -48,18 +48,18 @@ MODULE_LICENSE("Dual BSD/GPL");
 MODULE_AUTHOR("Jax");
 
 struct scull_pipe {
-	wait_queue_head_t inq;				/* ¶ÁÈ¡¶ÓÁÐ */
-	wait_queue_head_t outq;				/* Ð´Èë¶ÓÁÐ */
-	char *buffer;						/* »º³åÇøµÄÆðÊ¼ */
-	char *end;							/* »º³åÇøµÄ½áÎ² */
-	int buffersize;						/* ÓÃÓÚÖ¸Õë¼ÆËã */
-	char *rp;							/* ¶ÁÈ¡µÄÎ»ÖÃ */
-	char *wp;							/* Ð´ÈëµÄÎ»ÖÃ */
-	int nreaders;						/* ÓÃÓÚ¶Á´ò¿ªµÄÊýÁ¿ */
-	int nwriters;						/* ÓÃÓÚÐ´´ò¿ªµÄÊýÁ¿ */
-	struct fasync_struct *async_queue;	/* Òì²½¶ÁÈ¡Õß */
-	struct semaphore sem;				/* »¥³âÐÅºÅÁ¿ */
-	struct cdev cdev;					/* ×Ö·ûÉè±¸½á¹¹ */
+	wait_queue_head_t inq;				/* è¯»å–é˜Ÿåˆ— */
+	wait_queue_head_t outq;				/* å†™å…¥é˜Ÿåˆ— */
+	char *buffer;					/* ç¼“å†²åŒºçš„èµ·å§‹ */
+	char *end;					/* ç¼“å†²åŒºçš„ç»“å°¾ */
+	int buffersize;					/* ç”¨äºŽæŒ‡é’ˆè®¡ç®— */
+	char *rp;					/* è¯»å–çš„ä½ç½® */
+	char *wp;					/* å†™å…¥çš„ä½ç½® */
+	int nreaders;					/* ç”¨äºŽè¯»æ‰“å¼€çš„æ•°é‡ */
+	int nwriters;					/* ç”¨äºŽå†™æ‰“å¼€çš„æ•°é‡ */
+	struct fasync_struct *async_queue;		/* å¼‚æ­¥è¯»å–è€… */
+	struct semaphore sem;				/* äº’æ–¥ä¿¡å·é‡ */
+	struct cdev cdev;				/* å­—ç¬¦è®¾å¤‡ç»“æž„ */
 };
 
 static int scull_minor = 0;
@@ -74,7 +74,7 @@ module_param(scull_major, int, S_IRUGO);
 module_param(scull_psize, int, S_IRUGO);
 module_param(scull_nr_devs, int, S_IRUGO);
 
-/* ÓÐ¶àÉÙ¿ÉÐ´Èë¿Õ¼ä */
+/* æœ‰å¤šå°‘å¯å†™å…¥ç©ºé—´ */
 static int spacefree(struct scull_pipe *dev)
 {
 	if (dev->rp == dev->wp)
@@ -82,13 +82,13 @@ static int spacefree(struct scull_pipe *dev)
 	return ((dev->rp + dev->buffersize - dev->wp) % dev->buffersize) - 1;
 }
 
-/* µÈ´ýÓÐ¿ÉÓÃÓÚÐ´ÈëµÄ¿Õ¼ä£»µ÷ÓÃÕß±ØÐëÓµÓÐÉè±¸ÐÅºÅÁ¿¡£
- * ÔÚ´íÎóÇé¿öÏÂ£¬ÐÅºÅÁ¿½«ÔÚ·µ»ØÇ°ÊÍ·Å¡£
+/* ç­‰å¾…æœ‰å¯ç”¨äºŽå†™å…¥çš„ç©ºé—´ï¼›è°ƒç”¨è€…å¿…é¡»æ‹¥æœ‰è®¾å¤‡ä¿¡å·é‡ã€‚
+ * åœ¨é”™è¯¯æƒ…å†µä¸‹ï¼Œä¿¡å·é‡å°†åœ¨è¿”å›žå‰é‡Šæ”¾ã€‚
  */
 static int scull_getwritespace(struct scull_pipe *dev, struct file *filp)
 {
 	while (spacefree(dev) == 0) { /* full */
-		DEFINE_WAIT(wait); /* ÓÐ¿ÉÄÜ±àÒë²»Í¨¹ý */
+		DEFINE_WAIT(wait); /* æœ‰å¯èƒ½ç¼–è¯‘ä¸é€šè¿‡ */
 		
 		up(&dev->sem);
 		if (filp->f_flags & O_NONBLOCK)
@@ -99,7 +99,7 @@ static int scull_getwritespace(struct scull_pipe *dev, struct file *filp)
 			schedule();
 		finish_wait(&dev->outq, &wait);
 		if (signal_pending(current))
-			return -ERESTARTSYS; /* ÐÅºÅ£ºÍ¨Öª fs ²ã×öÏàÓ¦´¦Àí */
+			return -ERESTARTSYS; /* ä¿¡å·ï¼šé€šçŸ¥ fs å±‚åšç›¸åº”å¤„ç† */
 		if (down_interruptible(&dev->sem))
 			return -ERESTARTSYS;
 	}
@@ -128,21 +128,21 @@ ssize_t scull_p_read(struct file *filp, char __user *buf, size_t count, loff_t *
 	if (down_interruptible(&dev->sem))
 		return -ERESTARTSYS;
 	
-	while (dev->rp == dev->wp) {	/* ÎÞÊý¾Ý¿É¶ÁÈ¡ */
-		up(&dev->sem); /* ÊÍ·ÅËø */
+	while (dev->rp == dev->wp) {	/* æ— æ•°æ®å¯è¯»å– */
+		up(&dev->sem); /* é‡Šæ”¾é” */
 		if (filp->f_flags & O_NONBLOCK)
 			return -EAGAIN;
 		PDEBUG("\"%s\" reading: going to sleep\n", current->comm);
 		if (wait_event_interruptible(dev->inq, (dev->rp != dev->wp)))
-			return -ERESTARTSYS; /* ÐÅºÅ£¬Í¨Öª fs ²ã×öÏàÓ¦´¦Àí */
-		/* ·ñÔòÑ­»·£¬µ«Ê×ÏÈ»ñÈ¡Ëø */
+			return -ERESTARTSYS; /* ä¿¡å·ï¼Œé€šçŸ¥ fs å±‚åšç›¸åº”å¤„ç† */
+		/* å¦åˆ™å¾ªçŽ¯ï¼Œä½†é¦–å…ˆèŽ·å–é” */
 		if (down_interruptible(&dev->sem))
 			return -ERESTARTSYS;
 	}
-	/* Êý¾ÝÒÑ¾ÍÐ÷£¬·µ»Ø */
+	/* æ•°æ®å·²å°±ç»ªï¼Œè¿”å›ž */
 	if (dev->wp > dev->rp)
 		count = min(count, (size_t) (dev->wp - dev->rp));
-	else /* Ð´ÈëÖ¸Õë»Ø¾í£¬·µ»ØÊý¾ÝÖ±µ½ dev->end */
+	else /* å†™å…¥æŒ‡é’ˆå›žå·ï¼Œè¿”å›žæ•°æ®ç›´åˆ° dev->end */
 		count = min(count, (size_t) (dev->end - dev->rp));
 	if (copy_to_user(buf, dev->rp, count)) {
 		up(&dev->sem);
@@ -150,10 +150,10 @@ ssize_t scull_p_read(struct file *filp, char __user *buf, size_t count, loff_t *
 	}
 	dev->rp += count;
 	if (dev->rp == dev->end)
-		dev->rp = dev->buffer; /* »Ø¾í */
+		dev->rp = dev->buffer; /* å›žå· */
 	up(&dev->sem);
 	
-	/* ×îºó£¬»½ÐÑËùÓÐÐ´ÈëÕß²¢·µ»Ø */
+	/* æœ€åŽï¼Œå”¤é†’æ‰€æœ‰å†™å…¥è€…å¹¶è¿”å›ž */
 	wake_up_interruptible(&dev->outq);
 	PDEBUG("\"%s\" did read %li bytes\n", current->comm, (long)count);
 	return count;
@@ -166,16 +166,16 @@ ssize_t scull_p_write(struct file *filp, const char __user *buf, size_t count, l
 	
 	if (down_interruptible(&dev->sem))
 		return -ERESTARTSYS;
-	/* È·±£ÓÐ¿Õ¼ä¿ÉÐ´Èë */
+	/* ç¡®ä¿æœ‰ç©ºé—´å¯å†™å…¥ */
 	result = scull_getwritespace(dev, filp);
 	if (result)
-		return result; /* scull_getwritespace »áµ÷ÓÃ up(&dev->sem) */
+		return result; /* scull_getwritespace ä¼šè°ƒç”¨ up(&dev->sem) */
 	
-	/* ÓÐ¿Õ¼ä¿ÉÓÃ£¬½ÓÊÜÊý¾Ý */
+	/* æœ‰ç©ºé—´å¯ç”¨ï¼ŒæŽ¥å—æ•°æ® */
 	count = min(count, (size_t)spacefree(dev));
 	if (dev->wp >= dev->rp)
-		count = min(count, (size_t)(dev->end - dev->wp)); /* Ö±µ½»º³åÇø½áÎ² */
-	else /* Ð´ÈëÖ¸Õë»Ø¾í£¬Ìî³äµ½rp-1 */
+		count = min(count, (size_t)(dev->end - dev->wp)); /* ç›´åˆ°ç¼“å†²åŒºç»“å°¾ */
+	else /* å†™å…¥æŒ‡é’ˆå›žå·ï¼Œå¡«å……åˆ°rp-1 */
 		count = min(count, (size_t)(dev->rp - dev->wp - 1));
 	PDEBUG("Going to accept %li bytes to %p form %p\n", (long)count, dev->wp, buf);
 	if (copy_from_user(dev->wp, buf, count)) {
@@ -184,13 +184,13 @@ ssize_t scull_p_write(struct file *filp, const char __user *buf, size_t count, l
 	}
 	dev->wp += count;
 	if (dev->wp == dev->end)
-		dev->wp = dev->buffer; /* »Ø¾í */
+		dev->wp = dev->buffer; /* å›žå· */
 	up(&dev->sem);
 	
-	/* ×îºó£¬»½ÐÑ¶ÁÈ¡Õß */
-	wake_up_interruptible(&dev->inq); /* ×èÈûÔÚread()ºÍselect()ÉÏ */
+	/* æœ€åŽï¼Œå”¤é†’è¯»å–è€… */
+	wake_up_interruptible(&dev->inq); /* é˜»å¡žåœ¨read()å’Œselect()ä¸Š */
 	
-	/* Í¨ÖªÒì²½¶ÁÈ¡Õß */
+	/* é€šçŸ¥å¼‚æ­¥è¯»å–è€… */
 	if (dev->async_queue)
 		kill_fasync(&dev->async_queue, SIGIO, POLL_IN);
 	PDEBUG("\"%s\" did write %li bytes\n", current->comm, (long)count);
@@ -276,11 +276,11 @@ int scull_p_init(struct scull_pipe **dev)
 
 	init_waitqueue_head(&(*dev)->inq);
 	init_waitqueue_head(&(*dev)->outq);
-	/* ----------------------------------------------
-	 * +	 +		+		+		+		+		+
-	 * +	 +		+		+		+		+ sentry+
-	 * +	 +		+		+		+		+		+
-	 * ----------------------------------------------
+	/* --------------------------------------------------
+	 * +	   +	   +	   +	   +	   +	    +
+	 * +	   +	   +	   +	   +       + sentry +
+	 * +	   +	   +	   +	   +	   +	    +
+	 * --------------------------------------------------
 	 * exp: buffersize = 5
 	 * the last space is sentry, will not be used.
 	 */
