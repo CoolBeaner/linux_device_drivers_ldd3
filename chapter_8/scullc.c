@@ -79,6 +79,8 @@ static int scull_qset = SCULL_QSET;
 static int scull_nr_devs = 4;
 static dev_t dev = 0;
 static struct scull_dev *scull_dev = NULL;
+/* 高速缓存指针，它将用于所有设备 */
+kmem_cache_t *scullc_cache = NULL;
 
 module_param(scull_minor, int, S_IRUGO);
 module_param(scull_major, int, S_IRUGO);
@@ -87,7 +89,8 @@ module_param(scull_qset, int, S_IRUGO);
 module_param(scull_nr_devs, int, S_IRUGO);
 
 int scull_trim(struct scull_dev *dev)
-{
+{
+
 	struct scull_qset *next, *dptr;
 	int qset = dev->qset;
 	int i;
@@ -95,7 +98,8 @@ int scull_trim(struct scull_dev *dev)
 	for (dptr = dev->data; dptr; dptr = next) {
 		if (dptr->data) {
 			for (i = 0; i < qset; i++)
-				kfree(dptr->data[i]);
+				if (dptr->data[i])
+					kmem_cache_free(scullc_cache,dptr->data[i]);
 			kfree(dptr->data);
 			dptr->data = NULL;
 		}
@@ -223,7 +227,7 @@ ssize_t scull_write (struct file *filp, const char __user *buf, size_t count, lo
 		memset(dptr->data, 0, qset * sizeof(char *));
 	}
 	if (!dptr->data[s_pos]) {
-		dptr->data[s_pos] = kmalloc(quantum, GFP_KERNEL);
+		dptr->data[s_pos] = kmem_cache_alloc(scullc_cache, GFP_KERNEL);
 		if (!dptr->data[s_pos])
 			goto out;
 	}
@@ -392,7 +396,7 @@ int scull_setup_cdev(struct scull_dev *dev, int index)
 	dev->cdev.ops = &scull_fops;
 	err = cdev_add(&dev->cdev, devno, 1);
 	if (err) 
-		printk(KERN_NOTICE "Error %d adding scull%d\n", err, index);
+		printk(KERN_NOTICE "Error %d adding scullc%d\n", err, index);
 	
 	return err;
 }
@@ -407,10 +411,18 @@ int scull_dev_init(struct scull_dev **dev)
 		goto out;
 	}	
 
+	/* 创建一个高速缓存 */
+	scullc_cache = kmem_cache_create("scullc", scull_quantum,	\
+				0, SLAB_HWCACHE_ALIGN, NULL, NULL); /* 没有ctor/dtor */
+	if (!scullc_cache) {
+		retval = -ENOMEM;
+		goto err0;
+	}
+	
 	(*dev)->data = kmalloc(sizeof(struct scull_qset), GFP_KERNEL);
 	if (!(*dev)->data) {
 		retval = -ENOMEM;
-		goto err0;
+		goto err1;
 	}
 	memset((*dev)->data, 0, sizeof(struct scull_qset));
 	(*dev)->quantum = scull_quantum;
@@ -420,12 +432,14 @@ int scull_dev_init(struct scull_dev **dev)
 	sema_init(&(*dev)->sem, 2);
 	retval = scull_setup_cdev((*dev), 0);
 	if (retval) 
-		goto err1;
+		goto err2;
 	else 
 		goto out;
 	
-err1:
+err2:
 	kfree((*dev)->data);
+err1:
+	kmem_cache_destroy(scullc_cache);
 err0:
 	kfree(*dev);
 out:	
@@ -438,6 +452,8 @@ static void scull_dev_del(struct scull_dev **dev)
 		scull_trim(*dev);	
 	//(*dev)->access_key = 0;
 	cdev_del(&(*dev)->cdev);
+	if (scullc_cache)
+		kmem_cache_destroy(scullc_cache);
 	kfree(*dev);
 	*dev = NULL;
 }
@@ -448,17 +464,19 @@ static int __init scull_init(void)
 
 	printk(KERN_ALERT "Hello World\n");
 
-	if (scull_major) {
+	if (scull_major) {
+
 		dev = MKDEV(scull_major,scull_minor);
-		result = register_chrdev_region(dev, scull_nr_devs, "scull");
-	} else {
+		result = register_chrdev_region(dev, scull_nr_devs, "scullc");
+	} else {
+
 		result = alloc_chrdev_region(&dev, scull_minor, scull_nr_devs, \
-			"scull");
+			"scullc");
 		scull_major = MAJOR(dev);
 	}
 
 	if (result < 0) {
-		printk(KERN_WARNING "scull: can't get major %d\n", scull_major);
+		printk(KERN_WARNING "scullc: can't get major %d\n", scull_major);
 		goto out;
 	}
 	
